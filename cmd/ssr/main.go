@@ -14,8 +14,6 @@ import (
 	"github.com/81beastie/ssr/internal/replacer"
 )
 
-const version = "0.1.0"
-
 const usage = `ssr — утилита для удаления секретов из текста (stdin → буфер обмена)
 
 Читает текст из stdin, находит секреты (токены, пароли, ключи),
