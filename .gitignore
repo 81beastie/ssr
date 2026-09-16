@@ -2,5 +2,8 @@
 /ssr
 /ssr.exe
 
+# тестовый бинарник, который собирает TestMain в cmd/ssr
+/cmd/ssr/ssr
+
 # результаты ssr -f file -o .ssr (могут быть в любом каталоге)
 *.ssr

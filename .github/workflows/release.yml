@@ -1,0 +1,95 @@
+name: release
+
+# Every merge to main: verify, then publish a patch tag.
+# This keeps `go install ...@latest` in sync with main without manual tagging.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install X11 test dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xclip
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Tests
+        run: go test ./... -count=1 -timeout 10m
+
+      - name: Cross-compile (windows, darwin)
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/ssr
+          GOOS=darwin  GOARCH=arm64 go build -o /dev/null ./cmd/ssr
+
+  tag:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check release conditions
+        id: check
+        env:
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if echo "$HEAD_COMMIT_MESSAGE" | grep -q '\[skip release\]'; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Commit asks to skip release"
+            exit 0
+          fi
+          git fetch --tags --force --quiet
+          if [ -z "$(git tag -l 'v[0-9]*')" ]; then
+            echo "No version tags found locally, refusing to guess the next version" >&2
+            exit 1
+          fi
+          if [ -n "$(git tag --points-at HEAD)" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "HEAD already tagged, nothing to do"
+            exit 0
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next patch version
+        id: version
+        if: steps.check.outputs.release == 'true'
+        run: |
+          latest=$(git tag -l 'v[0-9]*' | sort -V | tail -1)
+          next=$(echo "$latest" | awk '{sub(/^v/,"",$0); split($0,a,"."); printf "v%d.%d.%d", a[1], a[2], a[3]+1}')
+          if [ "$(printf '%s\n%s\n' "${latest#v}" "${next#v}" | sort -V | head -1)" != "${latest#v}" ]; then
+            echo "Computed $next is not greater than latest $latest" >&2
+            exit 1
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "Next version: $next (current latest: $latest)"
+
+      - name: Tag and push
+        if: steps.check.outputs.release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}

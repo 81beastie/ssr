@@ -21,11 +21,30 @@ cat app.conf | ssr
 
 ## Установка
 
-### Из исходников (нужен Go 1.21+)
+### Через Go (нужен Go 1.26+)
 
 ```bash
 go install github.com/81beastie/ssr/cmd/ssr@latest
 ```
+
+Бинарник кладётся в `$(go env GOBIN)` или `$(go env GOPATH)/bin` (обычно `~/go/bin`).
+Если бинарник не находится в shell — добавь каталог в `PATH`:
+
+```bash
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc && source ~/.zshrc
+```
+
+### Обновление
+
+Та же команда — она идемпотентна и перетирает бинарник на месте:
+
+```bash
+go install github.com/81beastie/ssr/cmd/ssr@latest
+ssr -version
+```
+
+Команды `go update` в Go не существует. Проверить установленную версию: `go version -m $(which ssr)`.
+Удаление: `rm $(which ssr)`.
 
 ### Сборка из репозитория
 
@@ -41,6 +60,21 @@ go build -o ssr ./cmd/ssr
 GOOS=windows GOARCH=amd64 go build -o ssr.exe ./cmd/ssr
 GOOS=darwin  GOARCH=arm64 go build -o ssr-macos ./cmd/ssr
 ```
+
+## Релизы и версионирование
+
+Каждый merge в `main` автоматически публикует patch-релиз (CI-воркфлоу
+`.github/workflows/release.yml`: тесты → кросс-сборка → следующий semver-тег).
+Поэтому `@latest` всегда соответствует актуальному `main` — ручное тегирование
+не нужно. Minor/major теги (`v0.3.0`, `v1.0.0`) ставятся вручную при смене
+API или флагов.
+
+Версия в `ssr -version` берётся из build info (тега), а не из кода, поэтому
+врать она не может: `go install @latest` покажет номер установленного релиза,
+локальная сборка — `dev` или псевдо-версию с коммитом.
+
+Чтобы пропустить публикацию релиза для конкретного merge, добавь
+`[skip release]` в сообщение коммита.
 
 ## Использование
 
