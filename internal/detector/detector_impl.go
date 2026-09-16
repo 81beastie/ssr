@@ -19,11 +19,16 @@ type rule struct {
 var rules = []rule{
 	{secretType: "token", pattern: regexp.MustCompile(`\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b`)},
 	{secretType: "token", pattern: regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,255}\b`)},
+	{secretType: "token", pattern: regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{22,}`)},
 	{secretType: "token", pattern: regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)},
 	{secretType: "token", pattern: regexp.MustCompile(`(?i)\bbearer\s+([A-Za-z0-9\-._~+/]+=*)`)},
+	{secretType: "password", pattern: regexp.MustCompile(`\$(?:y|2[abxy]|6|5|1)\$[./A-Za-z0-9$]{20,}`)},
 	{secretType: "password", pattern: regexp.MustCompile(`[a-z][a-z0-9+.-]*://[^:/@\s]+:([^@\s]+)@`)},
 	{secretType: "password", pattern: regexp.MustCompile(`(?i)\bpassword\s*[=:]\s*([^\s"']+)`)},
 	{secretType: "token", pattern: regexp.MustCompile(`\b[A-Z0-9_]*TOKEN[A-Z0-9_]*=([A-Za-z0-9_\-]+)`)},
+	{secretType: "password", pattern: regexp.MustCompile(`(?i)\b(?:[a-z0-9_]*_)?(?:password|passwd|pwd|pswd|pass)\s*[=:]\s*"?([^\s"',;#]{3,})`)},
+	{secretType: "token", pattern: regexp.MustCompile(`(?i)\b(?:[a-z0-9_]*_)?(?:token|secret|api_?key|access_?key|auth)\s*[=:]\s*"?([^\s"',;#]{3,})`)},
+	{secretType: "password", pattern: regexp.MustCompile(`\b[\w.-]{2,}:([^\s@:/]{3,})@`)},
 }
 
 func New() *Detector {
