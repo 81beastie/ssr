@@ -1,0 +1,19 @@
+# Пример конфигурации ssr (черновик формата, будет реализован в будущих версиях)
+# Файл ищется в ./ssr.yaml, ~/.config/ssr/ssr.yaml
+#
+# Кастомные правила детектора секретов — добавляются к встроенным.
+
+rules:
+  # имя правила → regex с одной группой-значением секрета
+  - name: telegram-bot-token
+    pattern: '\d{8,10}:[A-Za-z0-9_-]{35}'
+
+  - name: slack-token
+    pattern: 'xox[baprs]-[A-Za-z0-9-]{10,}'
+
+  - name: yandex-oauth
+    pattern: 'y0_[A-Za-z0-9_-]{20,}'
+
+# Плейсхолдер по типу секрета (по умолчанию <ssr token>, <ssr password>)
+placeholders:
+  telegram-bot-token: "<ssr bot token>"
