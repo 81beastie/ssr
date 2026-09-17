@@ -33,7 +33,16 @@ jobs:
         run: go vet ./...
 
       - name: Tests
-        run: go test ./... -count=1 -timeout 10m
+        run: go test ./... -count=1 -timeout 10m -coverprofile=coverage.out -covermode=atomic
+
+      - name: Coverage gate
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
+          echo "Total coverage: $total%"
+          awk -v c="$total" 'BEGIN {exit (c+0 >= 90 ? 0 : 1)}' || { echo "Coverage below 90%"; exit 1; }
+          for pkg in detector replacer pipeline clipboard; do
+            go tool cover -func=coverage.out | grep "internal/$pkg/" | awk '{gsub(/%/,"",$3); if ($3+0 < 100) {print "Package '"$pkg"' below 100%:", $0; exit 1}}'
+          done
 
       - name: Cross-compile (windows, darwin)
         run: |

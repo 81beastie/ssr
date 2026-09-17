@@ -7,14 +7,18 @@ import (
 
 const devVersion = "dev"
 
-var version = resolveVersion(currentBuildInfo())
+var version = resolveVersion(mustBuildInfo())
 
-func currentBuildInfo() *debug.BuildInfo {
-	info, ok := debug.ReadBuildInfo()
+func mustBuildInfo() *debug.BuildInfo {
+	info, ok := currentBuildInfo()
 	if !ok {
 		return nil
 	}
 	return info
+}
+
+func currentBuildInfo() (*debug.BuildInfo, bool) {
+	return debug.ReadBuildInfo()
 }
 
 func resolveVersion(info *debug.BuildInfo) string {

@@ -22,12 +22,53 @@ type Config struct {
 	Display string
 	Text    string
 	Timeout time.Duration
+	Exe     string
 }
 
+const readyTimeout = 10 * time.Second
+
+type launchResult struct {
+	pid        int
+	stdin      *os.File
+	stdout     *os.File
+	waitCh     chan struct{}
+	killParent func()
+}
+
+type launcher interface {
+	launch(config Config) (*launchResult, error)
+}
+
+type launchFunc func(Config) (*launchResult, error)
+
+func (f launchFunc) launch(config Config) (*launchResult, error) { return f(config) }
+
 func Serve(config Config) (int, error) {
-	exe, err := os.Executable()
+	return serveWith(launchFunc(launchReal), config)
+}
+
+func serveWith(l launcher, config Config) (int, error) {
+	result, err := l.launch(config)
 	if err != nil {
-		return 0, fmt.Errorf("daemon: cannot resolve executable: %w", err)
+		return 0, fmt.Errorf("daemon: launch failed: %w", err)
+	}
+
+	if err := sendTextAndWaitReady(result.stdin, result.stdout, config.Text, readyTimeout); err != nil {
+		result.killParent()
+		return 0, fmt.Errorf("daemon: %w", err)
+	}
+
+	return result.pid, nil
+}
+
+func launchReal(config Config) (*launchResult, error) {
+	exe := config.Exe
+	if exe == "" {
+		resolved, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("cannot resolve executable: %w", err)
+		}
+		exe = resolved
 	}
 
 	args := []string{"--serve"}
@@ -38,7 +79,7 @@ func Serve(config Config) (int, error) {
 	stdinRead, stdinWrite, stdinErr := os.Pipe()
 	stdoutRead, stdoutWrite, stdoutErr := os.Pipe()
 	if stdinErr != nil || stdoutErr != nil {
-		return 0, fmt.Errorf("daemon: cannot create pipes")
+		return nil, fmt.Errorf("cannot create pipes")
 	}
 
 	cmd := exec.Command(exe, args...)
@@ -48,24 +89,32 @@ func Serve(config Config) (int, error) {
 	cmd.Stdout = stdoutWrite
 
 	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("daemon: cannot start serve process: %w", err)
+		_ = stdinRead.Close()
+		_ = stdinWrite.Close()
+		_ = stdoutRead.Close()
+		_ = stdoutWrite.Close()
+		return nil, fmt.Errorf("cannot start serve process: %w", err)
 	}
 
 	_ = stdinRead.Close()
 	_ = stdoutWrite.Close()
 
-	if err := sendTextAndWaitReady(stdinWrite, stdoutRead, config.Text); err != nil {
-		return 0, fmt.Errorf("daemon: %w", err)
-	}
-
+	waitCh := make(chan struct{})
 	go func() {
 		_ = cmd.Wait()
+		close(waitCh)
 	}()
 
-	return cmd.Process.Pid, nil
+	return &launchResult{
+		pid:        cmd.Process.Pid,
+		stdin:      stdinWrite,
+		stdout:     stdoutRead,
+		waitCh:     waitCh,
+		killParent: func() { _ = cmd.Process.Kill() },
+	}, nil
 }
 
-func sendTextAndWaitReady(stdin io.WriteCloser, stdout io.Reader, text string) error {
+func sendTextAndWaitReady(stdin io.WriteCloser, stdout io.Reader, text string, timeout time.Duration) error {
 	if _, err := io.WriteString(stdin, text); err != nil {
 		return fmt.Errorf("cannot send text: %w", err)
 	}
@@ -73,22 +122,48 @@ func sendTextAndWaitReady(stdin io.WriteCloser, stdout io.Reader, text string) e
 		return fmt.Errorf("cannot close stdin: %w", err)
 	}
 
-	reader := bufio.NewReader(stdout)
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		line, err := reader.ReadString('\n')
-		if strings.TrimSpace(line) == readySignal {
-			return nil
+	type lineResult struct {
+		line string
+		err  error
+	}
+	lines := make(chan lineResult, 1)
+	go func() {
+		reader := bufio.NewReader(stdout)
+		for {
+			line, err := reader.ReadString('\n')
+			if line != "" || err != nil {
+				lines <- lineResult{line: line, err: err}
+			}
+			if err != nil {
+				return
+			}
 		}
-		if err != nil {
-			return fmt.Errorf("serve process exited before ready: %w", err)
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case result := <-lines:
+			if strings.TrimSpace(result.line) == readySignal {
+				return nil
+			}
+			if result.err != nil {
+				return fmt.Errorf("serve process exited before ready: %w", result.err)
+			}
+		case <-timer.C:
+			return fmt.Errorf("serve process did not confirm readiness in %s", timeout)
 		}
 	}
-	return fmt.Errorf("serve process did not confirm readiness in 10s")
 }
 
 func RunServe(timeout time.Duration) error {
-	text, err := io.ReadAll(os.Stdin)
+	return runServe(os.Stdin, timeout)
+}
+
+func runServe(stdin io.Reader, timeout time.Duration) error {
+	text, err := io.ReadAll(stdin)
 	if err != nil {
 		return fmt.Errorf("daemon: cannot read text from stdin: %w", err)
 	}

@@ -32,3 +32,10 @@ func TestResolveVersion_ShouldReturnDev_WhenVersionEmpty(t *testing.T) {
 func TestResolveVersion_ShouldReturnDev_WhenBuildInfoUnavailable(t *testing.T) {
 	assert.Equal(t, "dev", resolveVersion(nil))
 }
+
+func TestCurrentBuildInfo_ShouldReportAvailability(t *testing.T) {
+	info, ok := currentBuildInfo()
+
+	assert.True(t, ok, "тестовый бинарь всегда собирается с build info")
+	assert.NotNil(t, info)
+}
